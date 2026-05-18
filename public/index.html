@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>TradeScanner</title>
+  <link rel="stylesheet" href="style.css" />
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.2/dist/chart.umd.min.js"></script>
+</head>
+<body>
+  <div class="app">
+    <header>
+      <span class="logo">TradeScanner</span>
+    </header>
+
+    <main>
+      <!-- Search -->
+      <section class="search-section">
+        <div class="search-bar">
+          <input id="tickerInput" type="text" placeholder="Enter ticker (e.g. AAPL)" autocomplete="off" spellcheck="false" />
+          <button id="searchBtn">Search</button>
+        </div>
+      </section>
+
+      <!-- Quote card -->
+      <section id="quoteCard" class="quote-card hidden">
+        <div class="quote-header">
+          <div>
+            <div id="stockName" class="stock-name"></div>
+            <div id="stockTicker" class="stock-ticker"></div>
+          </div>
+          <div class="price-block">
+            <div id="stockPrice" class="price"></div>
+            <div id="stockChange" class="change"></div>
+          </div>
+        </div>
+        <div class="stats-row">
+          <div class="stat">
+            <span class="stat-label">52W High</span>
+            <span id="high52w" class="stat-value"></span>
+          </div>
+          <div class="stat">
+            <span class="stat-label">52W Low</span>
+            <span id="low52w" class="stat-value"></span>
+          </div>
+        </div>
+      </section>
+
+      <!-- Chart -->
+      <section id="chartSection" class="chart-section hidden">
+        <div class="timeframe-buttons">
+          <button class="tf-btn active" data-range="1D">1D</button>
+          <button class="tf-btn" data-range="1W">1W</button>
+          <button class="tf-btn" data-range="1M">1M</button>
+          <button class="tf-btn" data-range="3M">3M</button>
+          <button class="tf-btn" data-range="YTD">YTD</button>
+        </div>
+        <div class="chart-wrapper">
+          <canvas id="priceChart"></canvas>
+          <div id="chartLoader" class="chart-loader hidden">Loading…</div>
+          <div id="chartError" class="chart-error hidden"></div>
+        </div>
+      </section>
+
+      <!-- Strike Sense Check -->
+      <section id="strikeSection" class="strike-section hidden">
+        <h2 class="section-title">Strike Sense Check</h2>
+        <div class="strike-inputs">
+          <input id="strikeInput" type="number" placeholder="Enter strike price" step="0.5" />
+          <button id="strikeBtn">Check</button>
+        </div>
+        <div id="strikeResult" class="strike-result hidden"></div>
+      </section>
+    </main>
+
+    <div id="globalError" class="global-error hidden"></div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

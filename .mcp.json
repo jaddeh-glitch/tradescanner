@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "tradescanner": {
+      "command": "node",
+      "args": ["/Users/jeffaddeh/TradeScanner/mcp-server.js"]
+    }
+  }
+}

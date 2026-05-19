@@ -87,6 +87,9 @@ app.get('/api/chart/:ticker', async (req, res) => {
 });
 
 app.get('/price', async (req, res) => {
+  console.log('[/price] query:', req.query);
+  console.log('[/price] user-agent:', req.headers['user-agent']);
+  console.log('[/price] host:', req.headers['host']);
   try {
     const ticker = (req.query.ticker || '').trim().toUpperCase();
     if (!ticker) return res.status(400).json({ error: 'Missing ticker parameter' });

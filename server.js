@@ -240,4 +240,15 @@ function getStartOf1D() {
 }
 
 const PORT = 3000;
-app.listen(PORT, () => console.log(`TradeScanner running at http://localhost:${PORT}`));
+app.listen(PORT, () => {
+  console.log(`TradeScanner running at http://localhost:${PORT}`);
+
+  // Keep Render free tier awake — ping self every 10 minutes
+  if (process.env.RENDER) {
+    const SELF = 'https://tradescanner-kn7u.onrender.com/price?ticker=AAPL';
+    setInterval(() => {
+      fetch(SELF).catch(() => {});
+    }, 10 * 60 * 1000);
+    console.log('Keep-warm ping active (every 10 min)');
+  }
+});

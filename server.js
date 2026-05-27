@@ -87,7 +87,8 @@ app.get('/api/chart/:ticker', async (req, res) => {
 });
 
 // ── Black-Scholes helpers ────────────────────────────────────────────────────
-// Standard normal CDF approximation (Abramowitz & Stegun)
+const R = 0.045; // approximate US risk-free rate
+
 function normCDF(x) {
   const a1=0.254829592, a2=-0.284496736, a3=1.421413741,
         a4=-1.453152027, a5=1.061405429, p=0.3275911;
@@ -97,15 +98,44 @@ function normCDF(x) {
   return 0.5 * (1 + sign * (1 - poly * Math.exp(-x * x)));
 }
 
-// Chance of expiring ITM = N(d2) for calls, N(-d2) for puts
-// Returns null when IV is unusable (≤0 or market closed giving near-zero values)
+function normPDF(x) {
+  return Math.exp(-0.5 * x * x) / Math.sqrt(2 * Math.PI);
+}
+
+// Returns { cop, delta, gamma, theta, vega, rho } or nulls if IV unusable
+function calcGreeks(type, S, K, T, iv) {
+  if (!S || !K || !T || !iv || iv < 0.005) {
+    return { cop: null, delta: null, gamma: null, theta: null, vega: null, rho: null };
+  }
+  const sigma = iv;
+  const sqrtT = Math.sqrt(T);
+  const d1 = (Math.log(S / K) + (R + 0.5 * sigma * sigma) * T) / (sigma * sqrtT);
+  const d2 = d1 - sigma * sqrtT;
+  const eRT = Math.exp(-R * T);
+  const nd1 = normPDF(d1);
+
+  const isCall = type === 'call';
+  const cop   = parseFloat(((isCall ? normCDF(d2) : normCDF(-d2)) * 100).toFixed(2));
+  const delta = parseFloat((isCall ? normCDF(d1) : normCDF(d1) - 1).toFixed(4));
+  const gamma = parseFloat((nd1 / (S * sigma * sqrtT)).toFixed(4));
+  // Theta: per calendar day
+  const thetaYear = isCall
+    ? (-S * nd1 * sigma / (2 * sqrtT)) - R * K * eRT * normCDF(d2)
+    : (-S * nd1 * sigma / (2 * sqrtT)) + R * K * eRT * normCDF(-d2);
+  const theta = parseFloat((thetaYear / 365).toFixed(4));
+  // Vega: per 1% move in IV
+  const vega  = parseFloat((S * nd1 * sqrtT / 100).toFixed(4));
+  // Rho: per 1% move in risk-free rate
+  const rho   = parseFloat((isCall
+    ?  K * T * eRT * normCDF(d2)  / 100
+    : -K * T * eRT * normCDF(-d2) / 100).toFixed(4));
+
+  return { cop, delta, gamma, theta, vega, rho };
+}
+
+// Keep backward-compat shim for /api/options chain usage
 function calcCOP(type, S, K, T, iv) {
-  if (!S || !K || !T || !iv || iv < 0.005) return null; // iv < 0.5% → garbage
-  const r = 0.045; // approximate US risk-free rate
-  const sigma = iv; // already as decimal e.g. 0.35 for 35%
-  const d2 = (Math.log(S / K) + (r - 0.5 * sigma * sigma) * T) / (sigma * Math.sqrt(T));
-  const cop = type === 'call' ? normCDF(d2) : normCDF(-d2);
-  return parseFloat((cop * 100).toFixed(1));
+  return calcGreeks(type, S, K, T, iv).cop;
 }
 
 app.get('/api/options/:ticker', async (req, res) => {
@@ -207,44 +237,75 @@ app.get('/option', async (req, res) => {
     const underlyingPrice = opts.quote?.regularMarketPrice ?? null;
     const marketState     = (opts.quote?.marketState || '').toUpperCase();
     const marketOpen      = marketState === 'REGULAR';
+    const contractType    = side === 'calls' ? 'call' : 'put';
 
-    const bid  = contract.bid  > 0 ? contract.bid  : null;
-    const ask  = contract.ask  > 0 ? contract.ask  : null;
-    const last = contract.lastPrice > 0 ? contract.lastPrice : null;
+    // Fetch the contract symbol directly for accurate volume, prev close, high, low
+    const cq = await yahooFinance.quote(contract.contractSymbol).catch(() => null);
+
+    // Prefer contract quote bid/ask (more current), fall back to options chain
+    const bid  = (cq?.bid  > 0 ? cq.bid  : contract.bid  > 0 ? contract.bid  : null);
+    const ask  = (cq?.ask  > 0 ? cq.ask  : contract.ask  > 0 ? contract.ask  : null);
+    const last = cq?.regularMarketPrice ?? (contract.lastPrice > 0 ? contract.lastPrice : null);
     const mark = (bid != null && ask != null)
       ? parseFloat(((bid + ask) / 2).toFixed(2))
       : last;
 
+    const prevClose  = cq?.regularMarketPreviousClose ?? null;
+    const dayHigh    = cq?.regularMarketDayHigh ?? null;
+    const dayLow     = cq?.regularMarketDayLow  ?? null;
+    const volume     = cq?.regularMarketVolume  ?? contract.volume ?? 0;
+    const changeAmt  = (last != null && prevClose != null)
+      ? parseFloat((last - prevClose).toFixed(2)) : null;
+    const changePct  = (changeAmt != null && prevClose)
+      ? parseFloat((changeAmt / prevClose * 100).toFixed(2)) : null;
+
     const ivRaw = contract.impliedVolatility ?? 0;
-    const ivPct = ivRaw > 0 ? parseFloat((ivRaw * 100).toFixed(1)) : null;
+    const ivPct = ivRaw > 0 ? parseFloat((ivRaw * 100).toFixed(2)) : null;
 
     const msPerYear = 365.25 * 24 * 3600 * 1000;
     const T = (new Date(contract.expiration) - Date.now()) / msPerYear;
-    const cop = calcCOP(side === 'calls' ? 'call' : 'put', underlyingPrice, contract.strike, T, ivRaw);
+    const greeks = calcGreeks(contractType, underlyingPrice, contract.strike, T, ivRaw);
 
     const moveNeeded = underlyingPrice
       ? parseFloat(((contract.strike - underlyingPrice) / underlyingPrice * 100).toFixed(2))
       : null;
 
     res.json({
-      ticker:         tickerUp,
-      type:           side === 'calls' ? 'call' : 'put',
-      strike:         contract.strike,
-      expiry:         new Date(contract.expiration).toISOString().slice(0, 10),
-      contractSymbol: contract.contractSymbol,
+      ticker:           tickerUp,
+      type:             contractType,
+      strike:           contract.strike,
+      expiry:           new Date(contract.expiration).toISOString().slice(0, 10),
+      contractSymbol:   contract.contractSymbol,
       underlyingPrice,
-      moveNeededPct:  moveNeeded,
+      moveNeededPct:    moveNeeded,
+      // Pricing
       mark,
       last,
       bid,
       ask,
-      volume:         contract.volume ?? 0,
-      openInterest:   contract.openInterest ?? 0,
-      iv:             ivPct,
-      cop,
-      inTheMoney:     contract.inTheMoney,
-      session:        marketOpen ? 'open' : marketState.toLowerCase() || 'closed',
-      timestamp:      new Date().toISOString(),
+      prevClose,
+      dayHigh,
+      dayLow,
+      change:           changeAmt,
+      changePct,
+      // Activity
+      volume,
+      openInterest:     contract.openInterest ?? 0,
+      volumeDelayedMins: 20,          // Yahoo options data is 20-min delayed
+      // Volatility & probability
+      iv:               ivPct,
+      cop:              greeks.cop,
+      // Greeks
+      greeks: {
+        delta: greeks.delta,
+        gamma: greeks.gamma,
+        theta: greeks.theta,
+        vega:  greeks.vega,
+        rho:   greeks.rho,
+      },
+      inTheMoney:       contract.inTheMoney,
+      session:          marketOpen ? 'open' : marketState.toLowerCase() || 'closed',
+      timestamp:        new Date().toISOString(),
     });
   } catch (err) {
     res.status(500).json({ error: err.message || 'Failed to fetch option' });

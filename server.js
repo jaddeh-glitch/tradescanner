@@ -176,6 +176,81 @@ app.get('/api/options/:ticker', async (req, res) => {
   }
 });
 
+app.get('/option', async (req, res) => {
+  try {
+    const { ticker, strike, type, expiry } = req.query;
+
+    if (!ticker)  return res.status(400).json({ error: 'Missing ticker' });
+    if (!strike)  return res.status(400).json({ error: 'Missing strike' });
+    if (!type)    return res.status(400).json({ error: 'Missing type (call or put)' });
+    if (!expiry)  return res.status(400).json({ error: 'Missing expiry (YYYY-MM-DD)' });
+
+    const tickerUp   = ticker.toUpperCase();
+    const strikeNum  = parseFloat(strike);
+    const side       = type.toLowerCase() === 'put' ? 'puts' : 'calls';
+    const expiryDate = new Date(expiry);
+
+    if (isNaN(strikeNum))         return res.status(400).json({ error: 'Invalid strike' });
+    if (isNaN(expiryDate.getTime())) return res.status(400).json({ error: 'Invalid expiry date' });
+
+    const opts = await yahooFinance.options(tickerUp, { date: expiryDate });
+    const chain = opts.options[0] || {};
+    const contracts = chain[side] || [];
+
+    // Find closest strike match
+    const contract = contracts.reduce((best, c) =>
+      Math.abs(c.strike - strikeNum) < Math.abs(best.strike - strikeNum) ? c : best
+    , contracts[0]);
+
+    if (!contract) return res.status(404).json({ error: 'No contracts found for that expiry' });
+
+    const underlyingPrice = opts.quote?.regularMarketPrice ?? null;
+    const marketState     = (opts.quote?.marketState || '').toUpperCase();
+    const marketOpen      = marketState === 'REGULAR';
+
+    const bid  = contract.bid  > 0 ? contract.bid  : null;
+    const ask  = contract.ask  > 0 ? contract.ask  : null;
+    const last = contract.lastPrice > 0 ? contract.lastPrice : null;
+    const mark = (bid != null && ask != null)
+      ? parseFloat(((bid + ask) / 2).toFixed(2))
+      : last;
+
+    const ivRaw = contract.impliedVolatility ?? 0;
+    const ivPct = ivRaw > 0 ? parseFloat((ivRaw * 100).toFixed(1)) : null;
+
+    const msPerYear = 365.25 * 24 * 3600 * 1000;
+    const T = (new Date(contract.expiration) - Date.now()) / msPerYear;
+    const cop = calcCOP(side === 'calls' ? 'call' : 'put', underlyingPrice, contract.strike, T, ivRaw);
+
+    const moveNeeded = underlyingPrice
+      ? parseFloat(((contract.strike - underlyingPrice) / underlyingPrice * 100).toFixed(2))
+      : null;
+
+    res.json({
+      ticker:         tickerUp,
+      type:           side === 'calls' ? 'call' : 'put',
+      strike:         contract.strike,
+      expiry:         new Date(contract.expiration).toISOString().slice(0, 10),
+      contractSymbol: contract.contractSymbol,
+      underlyingPrice,
+      moveNeededPct:  moveNeeded,
+      mark,
+      last,
+      bid,
+      ask,
+      volume:         contract.volume ?? 0,
+      openInterest:   contract.openInterest ?? 0,
+      iv:             ivPct,
+      cop,
+      inTheMoney:     contract.inTheMoney,
+      session:        marketOpen ? 'open' : marketState.toLowerCase() || 'closed',
+      timestamp:      new Date().toISOString(),
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message || 'Failed to fetch option' });
+  }
+});
+
 app.get('/price', async (req, res) => {
   console.log('[/price] query:', req.query);
   console.log('[/price] user-agent:', req.headers['user-agent']);

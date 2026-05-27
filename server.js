@@ -86,44 +86,90 @@ app.get('/api/chart/:ticker', async (req, res) => {
   }
 });
 
+// ── Black-Scholes helpers ────────────────────────────────────────────────────
+// Standard normal CDF approximation (Abramowitz & Stegun)
+function normCDF(x) {
+  const a1=0.254829592, a2=-0.284496736, a3=1.421413741,
+        a4=-1.453152027, a5=1.061405429, p=0.3275911;
+  const sign = x < 0 ? -1 : 1;
+  const t = 1 / (1 + p * Math.abs(x));
+  const poly = ((((a5*t + a4)*t + a3)*t + a2)*t + a1)*t;
+  return 0.5 * (1 + sign * (1 - poly * Math.exp(-x * x)));
+}
+
+// Chance of expiring ITM = N(d2) for calls, N(-d2) for puts
+// Returns null when IV is unusable (≤0 or market closed giving near-zero values)
+function calcCOP(type, S, K, T, iv) {
+  if (!S || !K || !T || !iv || iv < 0.005) return null; // iv < 0.5% → garbage
+  const r = 0.045; // approximate US risk-free rate
+  const sigma = iv; // already as decimal e.g. 0.35 for 35%
+  const d2 = (Math.log(S / K) + (r - 0.5 * sigma * sigma) * T) / (sigma * Math.sqrt(T));
+  const cop = type === 'call' ? normCDF(d2) : normCDF(-d2);
+  return parseFloat((cop * 100).toFixed(1));
+}
+
 app.get('/api/options/:ticker', async (req, res) => {
   try {
     const ticker = req.params.ticker.toUpperCase();
-    const { expiry } = req.query; // optional ISO date string e.g. 2026-05-30
+    const { expiry } = req.query;
 
     const opts = expiry
       ? await yahooFinance.options(ticker, { date: new Date(expiry) })
       : await yahooFinance.options(ticker);
 
-    // All available expiry dates (epoch ms → ISO string for the client)
     const expirationDates = (opts.expirationDates || []).map(d =>
       new Date(d).toISOString().slice(0, 10)
     );
 
     const chain = opts.options[0] || {};
+    const underlyingPrice = opts.quote?.regularMarketPrice ?? null;
+    const marketState = (opts.quote?.marketState || '').toUpperCase();
+    const marketOpen = marketState === 'REGULAR';
 
-    // Strip contract symbols and heavy fields; keep what we need
-    const mapContract = c => ({
-      strike:           c.strike,
-      last:             c.lastPrice,
-      bid:              c.bid,
-      ask:              c.ask,
-      volume:           c.volume ?? 0,
-      openInterest:     c.openInterest ?? 0,
-      iv:               c.impliedVolatility != null
-                          ? parseFloat((c.impliedVolatility * 100).toFixed(1))
-                          : null,
-      inTheMoney:       c.inTheMoney,
-      expiration:       new Date(c.expiration).toISOString().slice(0, 10),
-    });
+    const mapContract = (c, type) => {
+      const bid  = c.bid  > 0 ? c.bid  : null;
+      const ask  = c.ask  > 0 ? c.ask  : null;
+      const last = c.lastPrice > 0 ? c.lastPrice : null;
+
+      // Mark: mid when bid/ask live, else last price
+      const mark = (bid != null && ask != null)
+        ? parseFloat(((bid + ask) / 2).toFixed(2))
+        : last;
+
+      const ivRaw = c.impliedVolatility ?? 0;          // decimal e.g. 0.35
+      const ivPct = ivRaw > 0
+        ? parseFloat((ivRaw * 100).toFixed(1))
+        : null;
+
+      // Time to expiry in years
+      const msPerYear = 365.25 * 24 * 3600 * 1000;
+      const T = (new Date(c.expiration) - Date.now()) / msPerYear;
+
+      const cop = calcCOP(type, underlyingPrice, c.strike, T, ivRaw);
+
+      return {
+        strike:       c.strike,
+        last,
+        bid,
+        ask,
+        mark,
+        volume:       c.volume ?? 0,
+        openInterest: c.openInterest ?? 0,
+        iv:           ivPct,
+        cop,                     // % chance of expiring ITM (null = market closed / no IV)
+        inTheMoney:   c.inTheMoney,
+        expiration:   new Date(c.expiration).toISOString().slice(0, 10),
+      };
+    };
 
     res.json({
       ticker,
-      underlyingPrice: opts.quote?.regularMarketPrice ?? null,
+      underlyingPrice,
+      marketOpen,
       expirationDates,
       selectedExpiry:  expirationDates[0] ?? null,
-      calls:           (chain.calls  || []).map(mapContract),
-      puts:            (chain.puts   || []).map(mapContract),
+      calls:           (chain.calls || []).map(c => mapContract(c, 'call')),
+      puts:            (chain.puts  || []).map(c => mapContract(c, 'put')),
     });
   } catch (err) {
     res.status(500).json({ error: err.message || 'Failed to fetch options' });

@@ -344,14 +344,20 @@
         ? (c.iv > 80 ? 'iv-high' : c.iv < 30 ? 'iv-low' : '')
         : '';
 
+      const copClass = c.cop != null
+        ? (c.cop >= 60 ? 'iv-low' : c.cop <= 30 ? 'iv-high' : '')
+        : '';
+
       tr.innerHTML = `
         <td>${c.strike.toFixed(2)}</td>
+        <td><strong>${c.mark != null ? c.mark.toFixed(2) : '—'}</strong></td>
         <td>${c.last != null ? c.last.toFixed(2) : '—'}</td>
         <td>${c.bid  != null ? c.bid.toFixed(2)  : '—'}</td>
         <td>${c.ask  != null ? c.ask.toFixed(2)  : '—'}</td>
         <td>${c.volume > 0 ? c.volume.toLocaleString() : '—'}</td>
         <td>${c.openInterest > 0 ? c.openInterest.toLocaleString() : '—'}</td>
         <td class="${ivClass}">${c.iv != null ? c.iv + '%' : '—'}</td>
+        <td class="${copClass}">${c.cop != null ? c.cop + '%' : '—'}</td>
       `;
 
       // Tap row → pre-fill strike sense check
@@ -365,7 +371,7 @@
     });
 
     if (contracts.length === 0) {
-      optionsBody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--text-dim);padding:20px">No data</td></tr>';
+      optionsBody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:var(--text-dim);padding:20px">No data</td></tr>';
     }
   }
 

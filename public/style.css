@@ -341,3 +341,114 @@ header {
   50% { opacity: 0.4; }
 }
 .loading { animation: pulse 1.2s ease-in-out infinite; }
+
+/* ── Options chain ─────────────────────────────────────────────────────────── */
+.options-section {
+  margin: 16px 16px 0;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 20px;
+}
+
+.options-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 14px;
+  gap: 12px;
+}
+
+.options-header .section-title { margin-bottom: 0; }
+
+.expiry-select {
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text);
+  font-size: 13px;
+  padding: 7px 10px;
+  outline: none;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.expiry-select:focus { border-color: var(--green); }
+
+.chain-tabs {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 14px;
+}
+
+.chain-tab {
+  flex: 1;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text-dim);
+  padding: 8px 0;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.chain-tab:hover { color: var(--text); border-color: var(--green); }
+.chain-tab.active { background: var(--green); border-color: var(--green); color: #000; }
+.chain-tab.puts.active { background: var(--red); border-color: var(--red); color: #fff; }
+
+.options-table-wrap {
+  overflow-x: auto;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+}
+
+.options-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.options-table th {
+  background: var(--surface2);
+  color: var(--text-dim);
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  padding: 8px 10px;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.options-table th:first-child { text-align: left; }
+
+.options-table td {
+  padding: 8px 10px;
+  text-align: right;
+  border-top: 1px solid var(--border);
+  color: var(--text);
+  white-space: nowrap;
+}
+
+.options-table td:first-child { text-align: left; font-weight: 600; }
+
+.options-table tr.itm {
+  background: rgba(0, 200, 5, 0.06);
+}
+
+.options-table tr.itm-put {
+  background: rgba(255, 80, 0, 0.06);
+}
+
+.options-table tr.atm td:first-child {
+  color: var(--orange);
+}
+
+.options-table tr:active { background: var(--surface2); }
+.options-table tbody tr { cursor: pointer; }
+.options-table tbody tr:hover td { background: rgba(255,255,255,0.03); }
+
+.iv-high { color: var(--orange); }
+.iv-low  { color: var(--text-dim); }

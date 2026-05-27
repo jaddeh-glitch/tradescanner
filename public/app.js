@@ -35,8 +35,16 @@
       quoteCard.classList.remove('hidden');
       chartSection.classList.remove('hidden');
       strikeSection.classList.remove('hidden');
+      optionsSection.classList.remove('hidden');
+      expirySelect.innerHTML = '';
+      optionsCache = {};
+      currentSide = 'calls';
+      document.querySelectorAll('.chain-tab').forEach(b => {
+        b.classList.toggle('active', b.dataset.side === 'calls');
+        b.classList.remove('puts');
+      });
       setActiveRange('1D');
-      await loadChart(ticker, '1D');
+      await Promise.all([loadChart(ticker, '1D'), loadOptions(ticker, null)]);
     } catch (err) {
       showError(err.message);
     } finally {
@@ -277,6 +285,117 @@
     globalError.textContent = msg;
     globalError.classList.remove('hidden');
     setTimeout(() => globalError.classList.add('hidden'), 4000);
+  }
+
+  // ── Options chain ─────────────────────────────────────────────────────────────
+  const optionsSection = document.getElementById('optionsSection');
+  const expirySelect   = document.getElementById('expirySelect');
+  const optionsLoader  = document.getElementById('optionsLoader');
+  const optionsError   = document.getElementById('optionsError');
+  const optionsBody    = document.getElementById('optionsBody');
+  let currentSide      = 'calls';
+  let optionsCache     = {};  // keyed by expiry date
+
+  async function loadOptions(ticker, expiry) {
+    optionsLoader.classList.remove('hidden');
+    optionsError.classList.add('hidden');
+    optionsBody.innerHTML = '';
+    try {
+      const url = `/api/options/${ticker}` + (expiry ? `?expiry=${expiry}` : '');
+      const data = await apiFetch(url);
+
+      // Populate expiry dropdown on first load
+      if (expirySelect.options.length === 0) {
+        data.expirationDates.forEach(d => {
+          const opt = document.createElement('option');
+          opt.value = d;
+          opt.textContent = formatExpiry(d);
+          expirySelect.appendChild(opt);
+        });
+      }
+
+      optionsCache[data.selectedExpiry] = data;
+      renderOptionsTable(data, currentSide);
+    } catch (err) {
+      optionsError.textContent = 'Options unavailable: ' + err.message;
+      optionsError.classList.remove('hidden');
+    } finally {
+      optionsLoader.classList.add('hidden');
+    }
+  }
+
+  function renderOptionsTable(data, side) {
+    const contracts = data[side] || [];
+    const underlying = data.underlyingPrice;
+    optionsBody.innerHTML = '';
+
+    contracts.forEach(c => {
+      const distPct = underlying
+        ? Math.abs((c.strike - underlying) / underlying * 100)
+        : 99;
+      const itm = c.inTheMoney;
+      const atm = distPct < 1.5;
+
+      const tr = document.createElement('tr');
+      if (atm)       tr.classList.add('atm');
+      else if (itm)  tr.classList.add(side === 'puts' ? 'itm-put' : 'itm');
+
+      const ivClass = c.iv != null
+        ? (c.iv > 80 ? 'iv-high' : c.iv < 30 ? 'iv-low' : '')
+        : '';
+
+      tr.innerHTML = `
+        <td>${c.strike.toFixed(2)}</td>
+        <td>${c.last != null ? c.last.toFixed(2) : '—'}</td>
+        <td>${c.bid  != null ? c.bid.toFixed(2)  : '—'}</td>
+        <td>${c.ask  != null ? c.ask.toFixed(2)  : '—'}</td>
+        <td>${c.volume > 0 ? c.volume.toLocaleString() : '—'}</td>
+        <td>${c.openInterest > 0 ? c.openInterest.toLocaleString() : '—'}</td>
+        <td class="${ivClass}">${c.iv != null ? c.iv + '%' : '—'}</td>
+      `;
+
+      // Tap row → pre-fill strike sense check
+      tr.addEventListener('click', () => {
+        strikeInput.value = c.strike;
+        document.getElementById('strikeSection').scrollIntoView({ behavior: 'smooth' });
+        strikeInput.focus();
+      });
+
+      optionsBody.appendChild(tr);
+    });
+
+    if (contracts.length === 0) {
+      optionsBody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--text-dim);padding:20px">No data</td></tr>';
+    }
+  }
+
+  // Expiry dropdown change
+  expirySelect.addEventListener('change', () => {
+    const expiry = expirySelect.value;
+    if (optionsCache[expiry]) {
+      renderOptionsTable(optionsCache[expiry], currentSide);
+    } else {
+      loadOptions(currentTicker, expiry);
+    }
+  });
+
+  // Calls / Puts tab switch
+  document.querySelectorAll('.chain-tab').forEach(btn => {
+    btn.addEventListener('click', () => {
+      currentSide = btn.dataset.side;
+      document.querySelectorAll('.chain-tab').forEach(b => {
+        b.classList.toggle('active', b.dataset.side === currentSide);
+        if (b.dataset.side === 'puts') b.classList.toggle('puts', b.classList.contains('active'));
+      });
+      const expiry = expirySelect.value || null;
+      const cached = optionsCache[expiry];
+      if (cached) renderOptionsTable(cached, currentSide);
+    });
+  });
+
+  function formatExpiry(iso) {
+    const d = new Date(iso + 'T12:00:00Z');
+    return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
   }
 
   // ── URL parameter pre-load ────────────────────────────────────────────────────

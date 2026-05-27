@@ -86,6 +86,50 @@ app.get('/api/chart/:ticker', async (req, res) => {
   }
 });
 
+app.get('/api/options/:ticker', async (req, res) => {
+  try {
+    const ticker = req.params.ticker.toUpperCase();
+    const { expiry } = req.query; // optional ISO date string e.g. 2026-05-30
+
+    const opts = expiry
+      ? await yahooFinance.options(ticker, { date: new Date(expiry) })
+      : await yahooFinance.options(ticker);
+
+    // All available expiry dates (epoch ms → ISO string for the client)
+    const expirationDates = (opts.expirationDates || []).map(d =>
+      new Date(d).toISOString().slice(0, 10)
+    );
+
+    const chain = opts.options[0] || {};
+
+    // Strip contract symbols and heavy fields; keep what we need
+    const mapContract = c => ({
+      strike:           c.strike,
+      last:             c.lastPrice,
+      bid:              c.bid,
+      ask:              c.ask,
+      volume:           c.volume ?? 0,
+      openInterest:     c.openInterest ?? 0,
+      iv:               c.impliedVolatility != null
+                          ? parseFloat((c.impliedVolatility * 100).toFixed(1))
+                          : null,
+      inTheMoney:       c.inTheMoney,
+      expiration:       new Date(c.expiration).toISOString().slice(0, 10),
+    });
+
+    res.json({
+      ticker,
+      underlyingPrice: opts.quote?.regularMarketPrice ?? null,
+      expirationDates,
+      selectedExpiry:  expirationDates[0] ?? null,
+      calls:           (chain.calls  || []).map(mapContract),
+      puts:            (chain.puts   || []).map(mapContract),
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message || 'Failed to fetch options' });
+  }
+});
+
 app.get('/price', async (req, res) => {
   console.log('[/price] query:', req.query);
   console.log('[/price] user-agent:', req.headers['user-agent']);

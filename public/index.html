@@ -71,6 +71,40 @@
         </div>
         <div id="strikeResult" class="strike-result hidden"></div>
       </section>
+
+      <!-- Options chain -->
+      <section id="optionsSection" class="options-section hidden">
+        <div class="options-header">
+          <h2 class="section-title">Options Chain</h2>
+          <select id="expirySelect" class="expiry-select"></select>
+        </div>
+
+        <div class="chain-tabs">
+          <button class="chain-tab active" data-side="calls">Calls</button>
+          <button class="chain-tab" data-side="puts">Puts</button>
+        </div>
+
+        <div id="optionsLoader" class="chart-loader hidden">Loading…</div>
+        <div id="optionsError" class="chart-error hidden"></div>
+
+        <div id="optionsTable" class="options-table-wrap">
+          <table class="options-table">
+            <thead>
+              <tr>
+                <th>Strike</th>
+                <th>Last</th>
+                <th>Bid</th>
+                <th>Ask</th>
+                <th>Vol</th>
+                <th>OI</th>
+                <th>IV%</th>
+              </tr>
+            </thead>
+            <tbody id="optionsBody"></tbody>
+          </table>
+        </div>
+      </section>
+
     </main>
 
     <div id="globalError" class="global-error hidden"></div>
